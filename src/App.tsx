@@ -77,7 +77,8 @@ export default function App() {
   );
 
   // create a state variable for our connection
-  const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
+  // const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
+  const connection = new Connection("http://127.0.0.1:8899", "confirmed");
   
   // connection to use with local solana test validator
   // const connection = new Connection("http://127.0.0.1:8899", "confirmed");
@@ -97,22 +98,40 @@ export default function App() {
    */
   const createSender = async () => {
     // create a new Keypair
+    const sender: Keypair = Keypair.generate();
+    console.log("sender", sender)
 
-
-    console.log('Sender account: ', senderKeypair!.publicKey.toString());
+    console.log('Sender account: ', sender!.publicKey.toString());
     console.log('Airdropping 2 SOL to Sender Wallet');
 
     // save this new KeyPair into this state variable
-    setSenderKeypair(/*KeyPair here*/);
+    setSenderKeypair(sender);
 
     // request airdrop into this new account
+    try {
+      console.log("Airdopping some SOL to Sender wallet!");
+      const senderAirDropSignature = await connection.requestAirdrop(
+          new PublicKey(sender!.publicKey),
+          2 * LAMPORTS_PER_SOL
+      );
+      
+  
+      const latestBlockHash = await connection.getLatestBlockhash();
+  
+      // now confirm the transaction
+      await connection.confirmTransaction({
+        blockhash: latestBlockHash.blockhash,
+        lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+        signature: senderAirDropSignature
+    });
+  
+      console.log("Airdrop completed for the Sender account");
+  
+      console.log('Wallet Balance: ' + (await connection.getBalance(sender!.publicKey)) / LAMPORTS_PER_SOL);
+    } catch (err) {
+      console.error(err);
+    }
     
-
-    const latestBlockHash = await connection.getLatestBlockhash();
-
-    // now confirm the transaction
-
-    console.log('Wallet Balance: ' + (await connection.getBalance(senderKeypair!.publicKey)) / LAMPORTS_PER_SOL);
   }
 
   /**
@@ -127,9 +146,10 @@ export default function App() {
     if (solana) {
       try {
         // connect to phantom wallet and return response which includes the wallet public key
-
+        const response = await solana.connect();
+        console.log('wallet account ', response.publicKey.toString());
         // save the public key of the phantom wallet to the state variable
-        setReceiverPublicKey(/*PUBLIC KEY*/);
+        setReceiverPublicKey(response.publicKey.toString());
       } catch (err) {
         console.log(err);
       }
@@ -145,7 +165,7 @@ export default function App() {
     const { solana } = window;
 
     // checks if phantom wallet exists
-    if (solana) {
+    if (solana?.isConnected) {
       try {
         solana.disconnect();
         setReceiverPublicKey(undefined);
@@ -163,12 +183,29 @@ export default function App() {
   const transferSol = async () => {    
     
     // create a new transaction for the transfer
+    if (senderKeypair?.publicKey && receiverPublicKey) {
+      var transaction = new Transaction().add(
+        SystemProgram.transfer({
+            fromPubkey: senderKeypair.publicKey,
+            toPubkey: receiverPublicKey,
+            lamports: LAMPORTS_PER_SOL
+        })
+      );
 
-    // send and confirm the transaction
-
-    console.log("transaction sent and confirmed");
-    console.log("Sender Balance: " + await connection.getBalance(senderKeypair!.publicKey) / LAMPORTS_PER_SOL);
-    console.log("Receiver Balance: " + await connection.getBalance(receiverPublicKey!) / LAMPORTS_PER_SOL);
+      // send and confirm the transaction
+      var signature = await sendAndConfirmTransaction(
+        connection,
+        transaction,
+        [senderKeypair]
+      );
+      console.log('Signature is', signature);
+      console.log("transaction sent and confirmed");
+      console.log("Sender Balance: " + await connection.getBalance(senderKeypair!.publicKey) / LAMPORTS_PER_SOL);
+      console.log("Receiver Balance: " + await connection.getBalance(new PublicKey(receiverPublicKey!)) / LAMPORTS_PER_SOL);
+  
+    } else {
+      console.log("Sender or Receiver public key is undefined.")
+    }
   };
 
   // HTML code for the app
